@@ -966,6 +966,18 @@ extern "C" void dsy_uart_global_init()
  */
 static void UART_CheckRxListener(UartHandler::Impl* handle)
 {
+       if(handle->huart_.ErrorCode != HAL_UART_ERROR_NONE)
+    {
+        if(handle->circular_rx_callback_)
+        {
+            handle->circular_rx_callback_(nullptr,
+                                          0,
+                                          handle->circular_rx_context_,
+                                          UartHandler::Result::ERR);
+        }
+        /** Exit immediately, recovery handled in callback */
+        return;
+    } 
     size_t pos;
     size_t old_pos = handle->circular_rx_last_pos_;
 
@@ -1107,7 +1119,16 @@ extern "C" void HAL_UART_ErrorCallback(UART_HandleTypeDef* huart)
      *  might want to change this to have a different fallthrough
      *  for "listener_mode_"
      */
-    UartHandler::Impl::DmaTransferFinished(huart, UartHandler::Result::ERR);
+    // UartHandler::Impl::DmaTransferFinished(huart, UartHandler::Result::ERR);
+    auto* handle = MapInstanceToHandle(huart->Instance);
+    if(handle->listener_mode_)
+    {
+        UART_CheckRxListener(handle);
+    }
+    else
+    {
+        UartHandler::Impl::DmaTransferFinished(huart, UartHandler::Result::ERR);
+    }
 }
 
 extern "C" void HAL_UART_AbortCpltCallback(UART_HandleTypeDef* huart)

@@ -6,11 +6,26 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
 {
     // reset parser when status byte is received
     bool did_parse = false;
+    
+    // // Trash real-time messages (0xF8 to 0xFF)
+    // if (byte >= 0xF8 && byte <= 0xFF)
+    // {
+    //     return false; // Don't affect current parsing state
+    // }
+
+    // being more explicit Blocking MIDI Time Code Quarter Frame (0xF1)
+    if (byte == 0xF1)
+    {
+        // Ignore this message and reset the parser state
+        pstate_ = ParserEmpty;
+        return false;
+    }
 
     if((byte & kStatusByteMask) && pstate_ != ParserSysEx)
     {
         pstate_ = ParserEmpty;
     }
+    
     switch(pstate_)
     {
         case ParserEmpty:
@@ -119,15 +134,16 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
                     pstate_ = ParserHasData0;
                 }
 
-                //ChannelModeMessages (reserved Control Changes)
-                if(running_status_ == ControlChange
-                   && incoming_message_.data[0] > 119)
-                {
-                    incoming_message_.type    = ChannelMode;
-                    running_status_           = ChannelMode;
-                    incoming_message_.cm_type = static_cast<ChannelModeType>(
-                        incoming_message_.data[0] - 120);
-                }
+                // //ChannelModeMessages (reserved Control Changes)
+                // if(running_status_ == ControlChange
+                //    && incoming_message_.data[0] > 119)
+                // {
+                //     return false;
+                //     incoming_message_.type    = ChannelMode;
+                //     running_status_           = ChannelMode;
+                //     incoming_message_.cm_type = static_cast<ChannelModeType>(
+                //         incoming_message_.data[0] - 120);
+                // }
             }
             else
             {

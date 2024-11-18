@@ -1,6 +1,9 @@
 #pragma once
 #ifndef DSY_HAL_MAP_H
 #define DSY_HAL_MAP_H
+#ifdef __cplusplus
+extern "C" {
+#endif
 #include "stm32h7xx_hal.h"
 #include "daisy_core.h"
 
@@ -51,6 +54,10 @@ inline void GPIOClockEnable(Pin p)
     }
 }
 } // namespace daisy
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
 #endif

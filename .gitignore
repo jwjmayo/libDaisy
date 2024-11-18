@@ -1,4 +1,4 @@
-*.obj
+src/util/hal_map.c*.obj
 *.exe
 *.dll
 *.db
@@ -131,4 +131,3 @@ vs/*.log
 tests/libDaisy_gtest
 tests/build/
 examples/**/build/
-

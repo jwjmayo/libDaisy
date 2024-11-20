@@ -59,7 +59,6 @@ per/qspi \
 per/spi \
 per/spiMultislave \
 per/tim \
-per/tim_channel \
 per/uart \
 ui/UI \
 ui/AbstractMenu \

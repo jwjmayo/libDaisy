@@ -93,10 +93,10 @@ class PersistentStorage
     SettingStruct &GetSettings() { return settings_; }
 
     /** Performs the save operation, storing the storage */
-    void Save()
+    bool Save()
     {
         state_ = State::USER;
-        StoreSettingsIfChanged();
+        return StoreSettingsIfChanged();// Return whether changes were saved
     }
 
     /** Restores the settings stored in the QSPI */
@@ -114,35 +114,33 @@ class PersistentStorage
         SettingStruct user_data;
     };
 
-    void StoreSettingsIfChanged()
-    {
-        SaveStruct s;
-        s.storage_state = state_;
-        s.user_data     = settings_;
+bool StoreSettingsIfChanged()
+{
+    SaveStruct s;
+    s.storage_state = state_;
+    s.user_data     = settings_;
 
-        void *data_ptr = qspi_.GetData(address_offset_);
+    void *data_ptr = qspi_.GetData(address_offset_);
 
 #if !UNIT_TEST
-        // Caching behavior is different when running programs outside internal flash
-        // so we need to explicitly invalidate the QSPI mapped memory to ensure we are
-        // comparing the local settings with the most recently persisted settings.
-        if(System::GetProgramMemoryRegion()
-           != System::MemoryRegion::INTERNAL_FLASH)
-        {
-            dsy_dma_invalidate_cache_for_buffer((uint8_t *)data_ptr, sizeof(s));
-        }
+    // Invalidate the cache to ensure up-to-date comparison
+    if(System::GetProgramMemoryRegion() != System::MemoryRegion::INTERNAL_FLASH)
+    {
+        dsy_dma_invalidate_cache_for_buffer((uint8_t *)data_ptr, sizeof(s));
+    }
 #endif
 
-        // Only actually save if the new data is different
-        // Use the `==operator` in custom SettingStruct to fine tune
-        // what may or may not trigger the erase/save.
-        auto storage_data = reinterpret_cast<SaveStruct *>(data_ptr);
-        if(settings_ != storage_data->user_data)
-        {
-            qspi_.Erase(address_offset_, address_offset_ + sizeof(s));
-            qspi_.Write(address_offset_, sizeof(s), (uint8_t *)&s);
-        }
+    // Compare the current data with stored data
+    auto storage_data = reinterpret_cast<SaveStruct *>(data_ptr);
+    if(settings_ != storage_data->user_data)
+    {
+        // If data differs, erase and write the new settings
+        qspi_.Erase(address_offset_, address_offset_ + sizeof(s));
+        qspi_.Write(address_offset_, sizeof(s), (uint8_t *)&s);
+        return true; // Changes were saved
     }
+    return false; // No changes, nothing saved
+}
 
     QSPIHandle &  qspi_;
     uint32_t      address_offset_;

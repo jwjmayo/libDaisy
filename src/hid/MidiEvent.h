@@ -1,5 +1,5 @@
 // TODO: make this adjustable
-#define SYSEX_BUFFER_LEN 128
+#define SYSEX_BUFFER_LEN 512
 
 namespace daisy
 {

@@ -4,126 +4,108 @@ using namespace daisy;
 
 bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
 {
-    // reset parser when status byte is received
     bool did_parse = false;
-    
-    // // Trash real-time messages (0xF8 to 0xFF)
-    // if (byte >= 0xF8 && byte <= 0xFF)
-    // {
-    //     return false; // Don't affect current parsing state
-    // }
 
-    // being more explicit Blocking MIDI Time Code Quarter Frame (0xF1)
-    if (byte == 0xF1)
+    // Handle real-time messages without altering the parser state
+    if (byte >= 0xF8 && byte <= 0xFF)
     {
-        // Ignore this message and reset the parser state
-        pstate_ = ParserEmpty;
-        return false;
+        if (event_out != nullptr)
+        {
+            event_out->type = SystemRealTime;
+            event_out->srt_type = static_cast<SystemRealTimeType>(byte & kSystemRealTimeMask);
+            did_parse = true; // Real-time messages are complete events
+        }
+        return did_parse;
     }
 
-    if((byte & kStatusByteMask) && pstate_ != ParserSysEx)
+    // Reset parser when a status byte is received (except during SysEx)
+    if ((byte & kStatusByteMask) && pstate_ != ParserSysEx)
     {
         pstate_ = ParserEmpty;
     }
-    
-    switch(pstate_)
+
+    switch (pstate_)
     {
         case ParserEmpty:
-            // check byte for valid Status Byte
-            if(byte & kStatusByteMask)
+            if (byte & kStatusByteMask)
             {
-                // Get MessageType, and Channel
+                // New status byte received
                 incoming_message_.channel = byte & kChannelMask;
-                incoming_message_.type
-                    = static_cast<MidiMessageType>((byte & kMessageMask) >> 4);
-                if((byte & 0xF8) == 0xF8)
-                    incoming_message_.type = SystemRealTime;
+                incoming_message_.type = static_cast<MidiMessageType>((byte & kMessageMask) >> 4);
 
-                // Validate, and move on.
-                if(incoming_message_.type < MessageLast)
+                if (incoming_message_.type == SystemRealTime)
                 {
-                    pstate_ = ParserHasStatus;
-
-                    if(incoming_message_.type == SystemCommon)
-                    {
-                        incoming_message_.channel = 0;
-                        incoming_message_.sc_type
-                            = static_cast<SystemCommonType>(byte & 0x07);
-                        //sysex
-                        if(incoming_message_.sc_type == SystemExclusive)
-                        {
-                            pstate_                             = ParserSysEx;
-                            incoming_message_.sysex_message_len = 0;
-                        }
-                        //short circuit
-                        else if(incoming_message_.sc_type > SongSelect)
-                        {
-                            pstate_ = ParserEmpty;
-                            if(event_out != nullptr)
-                            {
-                                *event_out = incoming_message_;
-                            }
-                            did_parse = true;
-                        }
-                    }
-                    else if(incoming_message_.type == SystemRealTime)
-                    {
-                        incoming_message_.srt_type
-                            = static_cast<SystemRealTimeType>(
-                                byte & kSystemRealTimeMask);
-
-                        //short circuit to start
-                        pstate_ = ParserEmpty;
-                        if(event_out != nullptr)
-                        {
-                            *event_out = incoming_message_;
-                        }
-                        did_parse = true;
-                    }
-                    else // Channel Voice or Channel Mode
-                    {
-                        running_status_ = incoming_message_.type;
-                    }
-                }
-                // Else we'll keep waiting for a valid incoming status byte
-            }
-            else
-            {
-                // Handle as running status
-                incoming_message_.type    = running_status_;
-                incoming_message_.data[0] = byte & kDataByteMask;
-                //check for single byte running status, really this only applies to channel pressure though
-                if(running_status_ == ChannelPressure
-                   || running_status_ == ProgramChange
-                   || incoming_message_.sc_type == MTCQuarterFrame
-                   || incoming_message_.sc_type == SongSelect)
-                {
-                    //Send the single byte update
+                    // Handle System Real-Time messages
+                    incoming_message_.srt_type = static_cast<SystemRealTimeType>(byte & kSystemRealTimeMask);
                     pstate_ = ParserEmpty;
-                    if(event_out != nullptr)
+                    if (event_out != nullptr)
                     {
                         *event_out = incoming_message_;
                     }
                     did_parse = true;
                 }
+                else if (incoming_message_.type == SystemCommon)
+                {
+                    // Handle System Common messages
+                    incoming_message_.channel = 0;
+                    incoming_message_.sc_type = static_cast<SystemCommonType>(byte & 0x07);
+
+                    if (incoming_message_.sc_type == SystemExclusive)
+                    {
+                        pstate_ = ParserSysEx;
+                        incoming_message_.sysex_message_len = 0;
+                    }
+                    else
+                    {
+                        pstate_ = ParserEmpty;
+                        if (event_out != nullptr)
+                        {
+                            *event_out = incoming_message_;
+                        }
+                        did_parse = true;
+                    }
+                }
                 else
                 {
-                    pstate_ = ParserHasData0; //we need to get the 2nd byte yet.
+                    // Handle Channel Voice messages
+                    pstate_ = ParserHasStatus;
+                    running_status_ = incoming_message_.type;
+                }
+            }
+            else
+            {
+                // Handle running status
+                if (running_status_ != MessageLast)
+                {
+                    incoming_message_.type = running_status_;
+                    incoming_message_.data[0] = byte & kDataByteMask;
+
+                    if (running_status_ == ChannelPressure || running_status_ == ProgramChange)
+                    {
+                        pstate_ = ParserEmpty;
+                        if (event_out != nullptr)
+                        {
+                            *event_out = incoming_message_;
+                        }
+                        did_parse = true;
+                    }
+                    else
+                    {
+                        pstate_ = ParserHasData0;
+                    }
                 }
             }
             break;
+
         case ParserHasStatus:
-            if((byte & kStatusByteMask) == 0)
+            if ((byte & kStatusByteMask) == 0)
             {
                 incoming_message_.data[0] = byte & kDataByteMask;
-                if(running_status_ == ChannelPressure
-                   || running_status_ == ProgramChange
-                   || incoming_message_.sc_type == MTCQuarterFrame
-                   || incoming_message_.sc_type == SongSelect)
+
+                if (running_status_ == ChannelPressure || running_status_ == ProgramChange)
                 {
-                    //these are just one data byte, so we short circuit back to start
                     pstate_ = ParserEmpty;
-                    if(event_out != nullptr)
+                    if (event_out != nullptr)
                     {
                         *event_out = incoming_message_;
                     }
@@ -133,71 +115,60 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
                 {
                     pstate_ = ParserHasData0;
                 }
-
-                // //ChannelModeMessages (reserved Control Changes)
-                // if(running_status_ == ControlChange
-                //    && incoming_message_.data[0] > 119)
-                // {
-                //     return false;
-                //     incoming_message_.type    = ChannelMode;
-                //     running_status_           = ChannelMode;
-                //     incoming_message_.cm_type = static_cast<ChannelModeType>(
-                //         incoming_message_.data[0] - 120);
-                // }
             }
             else
             {
-                // invalid message go back to start ;p
+                // New status byte received, reset parser
                 pstate_ = ParserEmpty;
+                return Parse(byte, event_out); // Reprocess the byte as a new status
             }
             break;
+
         case ParserHasData0:
-            if((byte & kStatusByteMask) == 0)
+            if ((byte & kStatusByteMask) == 0)
             {
                 incoming_message_.data[1] = byte & kDataByteMask;
 
-                //velocity 0 NoteOns are NoteOffs
-                if(running_status_ == NoteOn && incoming_message_.data[1] == 0)
+                // Handle NoteOn with velocity 0 as NoteOff
+                if (running_status_ == NoteOn && incoming_message_.data[1] == 0)
                 {
                     incoming_message_.type = NoteOff;
                 }
 
-                // At this point the message is valid, and we can complete this MidiEvent
-                if(event_out != nullptr)
+                if (event_out != nullptr)
                 {
                     *event_out = incoming_message_;
                 }
                 did_parse = true;
+            }
+            pstate_ = ParserEmpty;
+            break;
+
+        case ParserSysEx:
+            if (byte == 0xF7)
+            {
+                // End of SysEx message
+                pstate_ = ParserEmpty;
+                if (event_out != nullptr)
+                {
+                    *event_out = incoming_message_;
+                }
+                did_parse = true;
+            }
+            else if (incoming_message_.sysex_message_len < SYSEX_BUFFER_LEN)
+            {
+                // Store SysEx data
+                incoming_message_.sysex_data[incoming_message_.sysex_message_len++] = byte;
             }
             else
             {
-                // invalid message go back to start ;p
+                // SysEx buffer overflow, discard excess data
                 pstate_ = ParserEmpty;
             }
-            // Regardless, of whether the data was valid or not we go back to empty
-            // because either the message is queued for handling or its not.
-            pstate_ = ParserEmpty;
             break;
-        case ParserSysEx:
-            // end of sysex
-            if(byte == 0xf7)
-            {
-                pstate_ = ParserEmpty;
-                if(event_out != nullptr)
-                {
-                    *event_out = incoming_message_;
-                }
-                did_parse = true;
-            }
-            else if(incoming_message_.sysex_message_len < SYSEX_BUFFER_LEN)
-            {
-                incoming_message_
-                    .sysex_data[incoming_message_.sysex_message_len]
-                    = byte;
-                incoming_message_.sysex_message_len++;
-            }
+
+        default:
             break;
-        default: break;
     }
 
     return did_parse;
@@ -205,6 +176,7 @@ bool MidiParser::Parse(uint8_t byte, MidiEvent* event_out)
 
 void MidiParser::Reset()
 {
-    pstate_                = ParserEmpty;
+    pstate_ = ParserEmpty;
     incoming_message_.type = MessageLast;
+    running_status_ = MessageLast;
 }

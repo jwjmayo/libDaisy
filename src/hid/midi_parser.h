@@ -15,7 +15,7 @@ namespace daisy
 class MidiParser
 {
   public:
-    MidiParser(){};
+    MidiParser() : pstate_(ParserEmpty), running_status_(MessageLast) {}
     ~MidiParser() {}
 
     inline void Init() { Reset(); }
@@ -52,11 +52,13 @@ class MidiParser
     MidiMessageType running_status_;
 
     // Masks to check for message type, and byte content
-    const uint8_t kStatusByteMask     = 0x80;
-    const uint8_t kMessageMask        = 0x70;
-    const uint8_t kDataByteMask       = 0x7F;
-    const uint8_t kChannelMask        = 0x0F;
-    const uint8_t kSystemRealTimeMask = 0x07;
+    static constexpr uint8_t kStatusByteMask     = 0x80;
+    static constexpr uint8_t kMessageMask        = 0x70;
+    static constexpr uint8_t kDataByteMask       = 0x7F;
+    static constexpr uint8_t kChannelMask        = 0x0F;
+    static constexpr uint8_t kSystemRealTimeMask = 0x07;
+
+    // static constexpr size_t SYSEX_BUFFER_LEN = 256; // Define a reasonable buffer size for SysEx //defined
 };
 
 } // namespace daisy
